@@ -1,17 +1,18 @@
 # cordova-plugin-rtsp-hls-player
 
-RTSP to HLS streaming player for iOS using FFmpegKit and native AVPlayer.
+RTSP → HLS streaming player for iOS using FFmpegKit and native AVPlayer.
 
-## Почему этот плагин?
+## Why this plugin?
 
-MobileVLCKit имеет хроническую проблему на iOS 14+:
+MobileVLCKit has a chronic issue on iOS 14+:
+
 ```
 Unable to determine our source address: This computer has an invalid IP address: 0.0.0.0
 ```
 
-Этот плагин решает проблему через конвертацию RTSP → HLS с помощью FFmpeg.
+This plugin avoids that problem by converting **RTSP → HLS** using FFmpeg.
 
-## Структура плагина
+## Plugin structure
 
 ```
 cordova-plugin-rtsp-hls-player/
@@ -30,27 +31,27 @@ cordova-plugin-rtsp-hls-player/
         └── HlsPlayerViewController.m
 ```
 
-## Установка
+## Installation
 
-### 1. Добавьте плагин
+### 1. Add the plugin
 
 ```bash
 cordova plugin add /path/to/cordova-plugin-rtsp-hls-player
 ```
 
-### 2. Обновите Podfile
+### 2. Update the Podfile
 
-В `platforms/ios/Podfile` добавьте зависимости:
+In `platforms/ios/Podfile`, add the dependencies:
 
 ```ruby
 platform :ios, '14.0'
 use_frameworks!
 
 target 'YourApp' do
-  # FFmpegKit (community fork - оригинальный закрыт)
+  # FFmpegKit (community fork — the original is discontinued/closed)
   pod 'ffmpeg-kit-ios-full', :podspec => 'https://raw.githubusercontent.com/luthviar/ffmpeg-kit-ios-full/main/ffmpeg-kit-ios-full.podspec'
   
-  # Локальный HTTP сервер для HLS
+  # Local HTTP server for HLS playback
   pod 'GCDWebServer', '~> 3.5'
 end
 
@@ -64,75 +65,76 @@ post_install do |installer|
 end
 ```
 
-### 3. Установите pods
+### 3. Install pods
 
 ```bash
 cd platforms/ios
 pod install
 ```
 
-### 4. Откройте .xcworkspace
+### 4. Open the workspace
 
 ```bash
 open YourApp.xcworkspace
 ```
 
-**ВАЖНО**: Открывайте `.xcworkspace`, НЕ `.xcodeproj`!
+**IMPORTANT**: Open `.xcworkspace`, NOT `.xcodeproj`.
 
-## Использование
+## Usage
 
 ```javascript
-// Проверка доступности FFmpeg
+// Check FFmpeg availability
 RtspHlsPlayer.checkAvailability(function(available) {
     console.log('FFmpeg available:', available);
 });
 
-// Запуск стрима
+// Start streaming
 RtspHlsPlayer.play({
     frontUrl: 'rtsp://192.168.0.1:554/livestream/1',
-    rearUrl: 'rtsp://192.168.0.1:554/livestream/2',  // опционально
+    rearUrl: 'rtsp://192.168.0.1:554/livestream/2',  // optional
     title: 'Dashcam Live',
     apiBaseUrl: 'http://192.168.0.1'
 }, 
 function(status, message) {
-    // Статусы: STARTING, CONVERTING, HLS_READY, BUFFERING, PLAYING, CLOSED
+    // Statuses: STARTING, CONVERTING, HLS_READY, BUFFERING, PLAYING, CLOSED
     console.log('Status:', status, message);
 },
 function(error) {
     console.error('Error:', error);
 },
 function(action, camera, data) {
-    // Действия: PHOTO, PHOTO_SUCCESS, RECORD_START, RECORD_STOP, CAMERA_SWITCHED
+    // Actions: PHOTO, PHOTO_SUCCESS, RECORD_START, RECORD_STOP, CAMERA_SWITCHED
     console.log('Action:', action, camera);
 });
 
-// Остановка
+// Stop
 RtspHlsPlayer.stop();
 ```
 
-## Как работает
+## How it works
 
 ```
 Dashcam (RTSP) 
     ↓
-FFmpegKit (конвертация на iPhone)
+FFmpegKit (conversion on iPhone)
     ↓
-HLS файлы (/tmp/hls_stream/)
+HLS files (/tmp/hls_stream/)
     ↓
 GCDWebServer (localhost:8765)
     ↓
-AVPlayer (нативный плеер)
+AVPlayer (native player)
 ```
 
-## Задержка
+## Latency
 
-Из-за HLS сегментации задержка составляет ~3-5 секунд.
+Because of HLS segmentation, the typical latency is ~3–5 seconds.
 
-Для уменьшения задержки можно изменить `hls_time` в RtspHlsConverter.m:
+To reduce latency, change `hls_time` in `RtspHlsConverter.m`:
+
 ```objc
-@"-hls_time 1 "  // 1 секунда вместо 2
+@"-hls_time 1 "  // 1 second instead of 2
 ```
 
-## Лицензия
+## License
 
 MIT
