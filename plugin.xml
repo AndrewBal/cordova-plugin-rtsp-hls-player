@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        id="cordova-plugin-rtsp-hls-player"
+        version="1.0.0">
+    
+    <name>RTSP HLS Player</name>
+    <description>RTSP to HLS streaming player for iOS using FFmpegKit and native AVPlayer</description>
+    <license>MIT</license>
+    <keywords>cordova,rtsp,hls,streaming,ffmpeg,avplayer,dashcam</keywords>
+    
+    <engines>
+        <engine name="cordova-ios" version=">=6.0.0" />
+    </engines>
+    
+    <js-module src="www/RtspHlsPlayer.js" name="RtspHlsPlayer">
+        <clobbers target="RtspHlsPlayer" />
+    </js-module>
+    
+    <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="RtspHlsPlayer">
+                <param name="ios-package" value="RtspHlsPlayerPlugin" />
+            </feature>
+        </config-file>
+        
+        <!-- Source files -->
+        <header-file src="src/ios/RtspHlsPlayerPlugin.h" />
+        <source-file src="src/ios/RtspHlsPlayerPlugin.m" />
+        <header-file src="src/ios/RtspHlsConverter.h" />
+        <source-file src="src/ios/RtspHlsConverter.m" />
+        <header-file src="src/ios/HlsPlayerViewController.h" />
+        <source-file src="src/ios/HlsPlayerViewController.m" />
+        
+        <!-- Frameworks -->
+        <framework src="AVFoundation.framework" />
+        <framework src="AVKit.framework" />
+        <framework src="CoreMedia.framework" />
+        <framework src="VideoToolbox.framework" />
+        <framework src="AudioToolbox.framework" />
+        
+        <!-- Info.plist -->
+        <config-file target="*-Info.plist" parent="NSLocalNetworkUsageDescription">
+            <string>This app needs to connect to your dashcam over local WiFi to stream video.</string>
+        </config-file>
+        
+        <config-file target="*-Info.plist" parent="NSBonjourServices">
+            <array>
+                <string>_http._tcp</string>
+                <string>_rtsp._tcp</string>
+            </array>
+        </config-file>
+        
+        <config-file target="*-Info.plist" parent="NSAppTransportSecurity">
+            <dict>
+                <key>NSAllowsArbitraryLoads</key>
+                <true/>
+                <key>NSAllowsLocalNetworking</key>
+                <true/>
+            </dict>
+        </config-file>
+        
+        <config-file target="*-Info.plist" parent="UIBackgroundModes">
+            <array>
+                <string>audio</string>
+            </array>
+        </config-file>
+        
+        <!-- 
+        ВАЖНО: CocoaPods зависимости нужно добавить вручную в Podfile!
+        Смотри README.md для инструкций.
+        -->
+    </platform>
+</plugin>

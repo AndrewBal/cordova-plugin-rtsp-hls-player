@@ -1,0 +1,22 @@
+{
+  "name": "cordova-plugin-rtsp-hls-player",
+  "version": "1.0.0",
+  "description": "RTSP to HLS streaming player for iOS using FFmpegKit and native AVPlayer",
+  "cordova": {
+    "id": "cordova-plugin-rtsp-hls-player",
+    "platforms": ["ios"]
+  },
+  "keywords": [
+    "cordova",
+    "rtsp",
+    "hls",
+    "streaming",
+    "ffmpeg",
+    "avplayer",
+    "dashcam",
+    "ecosystem:cordova",
+    "cordova-ios"
+  ],
+  "author": "QuikVizn",
+  "license": "MIT"
+}
