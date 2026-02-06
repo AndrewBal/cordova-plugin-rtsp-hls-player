@@ -31,24 +31,30 @@
     
     self.converter = [[RtspHlsConverter alloc] init];
     
-    __weak typeof(self) weakSelf = self;
+    __weak RtspHlsPlayerPlugin *weakSelf = self;
     
     [self.converter startConversion:frontUrl 
                      statusCallback:^(NSString *status, NSString *message) {
-        [weakSelf sendStatus:status message:message];
+        RtspHlsPlayerPlugin *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        
+        [strongSelf sendStatus:status message:message];
         
         if ([status isEqualToString:@"HLS_READY"]) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [weakSelf showPlayerWithHlsUrl:message
-                                      frontUrl:frontUrl
-                                       rearUrl:rearUrl
-                                         title:title
-                                 initialCamera:initialCamera];
+                [strongSelf showPlayerWithHlsUrl:message
+                                        frontUrl:frontUrl
+                                         rearUrl:rearUrl
+                                           title:title
+                                   initialCamera:initialCamera];
             });
         }
     } 
                       errorCallback:^(NSString *error) {
-        [weakSelf sendError:error];
+        RtspHlsPlayerPlugin *strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf sendError:error];
+        }
     }];
 }
 
@@ -150,14 +156,17 @@
     
     [self sendStatus:@"SWITCHING_CAMERA" message:camera];
     
-    __weak typeof(self) weakSelf = self;
+    __weak RtspHlsPlayerPlugin *weakSelf = self;
     [self.converter switchToUrl:newRtspUrl 
                  statusCallback:^(NSString *status, NSString *message) {
-        [weakSelf sendStatus:status message:message];
+        RtspHlsPlayerPlugin *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        
+        [strongSelf sendStatus:status message:message];
         
         if ([status isEqualToString:@"HLS_READY"]) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [weakSelf.playerVC updateHlsUrl:message];
+                [strongSelf.playerVC updateHlsUrl:message];
             });
         }
     }];

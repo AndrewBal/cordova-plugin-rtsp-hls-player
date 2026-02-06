@@ -36,6 +36,13 @@
     #warning "GCDWebServer not found!"
 #endif
 
+#if __has_include(<GCDWebServer/GCDWebServerFileResponse.h>)
+    #import <GCDWebServer/GCDWebServerFileResponse.h>
+#elif __has_include("GCDWebServerFileResponse.h")
+    #import "GCDWebServerFileResponse.h"
+#endif
+
+
 @interface RtspHlsConverter ()
 
 @property (nonatomic, assign) BOOL isConverting;
@@ -207,25 +214,22 @@
     
     // FFmpeg command for RTSP → HLS
     NSString *command = [NSString stringWithFormat:
-        @"-fflags nobuffer "
+        @"-fflags +genpts+nobuffer "
         @"-flags low_delay "
         @"-rtsp_transport tcp "
+        @"-use_wallclock_as_timestamps 1 "
         @"-i \"%@\" "
-        @"-vsync 0 "
-        @"-copyts "
-        @"-vcodec copy "
-        @"-acodec aac "
-        @"-b:a 128k "
+        @"-an "
+        @"-c:v copy "
         @"-f hls "
         @"-hls_time 2 "
-        @"-hls_list_size 5 "
-        @"-hls_flags delete_segments+append_list "
+        @"-hls_list_size 6 "
+        @"-hls_allow_cache 0 "
+        @"-hls_flags delete_segments+append_list+independent_segments "
         @"-hls_segment_filename \"%@\" "
         @"-start_number 0 "
         @"\"%@\"",
         rtspUrl, segmentPath, outputPath];
-    
-    NSLog(@"[HLS] FFmpeg command: %@", command);
     
     self.isConverting = YES;
     self.startTime = [NSDate date];
@@ -233,11 +237,14 @@
     
     [self startHLSMonitoring];
     
-    __weak typeof(self) weakSelf = self;
+    __weak RtspHlsConverter *weakSelf = self;
     
     self.ffmpegSession = [FFmpegKit executeAsync:command 
                               withCompleteCallback:^(FFmpegSession *session) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            RtspHlsConverter *strongSelf = weakSelf;
+            if (!strongSelf) return;
+            
             ReturnCode *returnCode = [session getReturnCode];
             
             if ([ReturnCode isSuccess:returnCode]) {
@@ -247,14 +254,14 @@
             } else {
                 NSLog(@"[HLS] FFmpeg failed with code: %d", [returnCode getValue]);
                 
-                if (weakSelf.errorCallback && weakSelf.isConverting) {
+                if (strongSelf.errorCallback && strongSelf.isConverting) {
                     NSString *output = [session getOutput];
-                    weakSelf.errorCallback([NSString stringWithFormat:@"FFmpeg error: %@", 
-                                           output ?: @"Unknown"]);
+                    NSString *errorMessage = [strongSelf extractErrorMessage:output];
+                    strongSelf.errorCallback(errorMessage);
                 }
             }
             
-            weakSelf.isConverting = NO;
+            strongSelf.isConverting = NO;
         });
     } 
                                  withLogCallback:nil 
@@ -267,11 +274,14 @@
 - (void)startHLSMonitoring {
     [self.hlsCheckTimer invalidate];
     
-    __weak typeof(self) weakSelf = self;
+    __weak RtspHlsConverter *weakSelf = self;
     self.hlsCheckTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 
                                                          repeats:YES 
                                                            block:^(NSTimer *timer) {
-        [weakSelf checkHLSFile];
+        RtspHlsConverter *strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf checkHLSFile];
+        }
     }];
 }
 
@@ -294,13 +304,14 @@
             
             self.segmentCount = segments;
             
-            if (segments >= 1) {
+            if (segments >= 3) {
                 NSLog(@"[HLS] Ready! Segments: %ld", (long)segments);
                 
                 [self.hlsCheckTimer invalidate];
                 self.hlsCheckTimer = nil;
                 
                 if (self.statusCallback) {
+                    NSString *freshUrl = [NSString stringWithFormat:@"%@?t=%0.f", self.hlsUrl, [[NSDate date] timeIntervalSince1970]];
                     self.statusCallback(@"HLS_READY", self.hlsUrl);
                 }
                 
@@ -311,19 +322,22 @@
 }
 
 - (void)startSegmentMonitoring {
-    __weak typeof(self) weakSelf = self;
+    __weak RtspHlsConverter *weakSelf = self;
     self.hlsCheckTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 
                                                          repeats:YES 
                                                            block:^(NSTimer *timer) {
+        RtspHlsConverter *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        
         NSFileManager *fm = [NSFileManager defaultManager];
-        NSArray *files = [fm contentsOfDirectoryAtPath:weakSelf.hlsOutputPath error:nil];
+        NSArray *files = [fm contentsOfDirectoryAtPath:strongSelf.hlsOutputPath error:nil];
         NSInteger segments = 0;
         for (NSString *file in files) {
             if ([file hasSuffix:@".ts"]) {
                 segments++;
             }
         }
-        weakSelf.segmentCount = segments;
+        strongSelf.segmentCount = segments;
     }];
 }
 
@@ -334,49 +348,74 @@
     if (self.webServer && self.webServer.isRunning) {
         return;
     }
-    
+
     self.webServer = [[GCDWebServer alloc] init];
-    
-    [self.webServer addGETHandlerForBasePath:@"/hls/" 
-                               directoryPath:self.hlsOutputPath 
-                               indexFilename:nil 
-                                    cacheAge:0 
-                          allowRangeRequests:YES];
-    
+
+    NSString *baseDir = self.hlsOutputPath;
+
+    [self.webServer addHandlerForMethod:@"GET"
+                              pathRegex:@"/hls/.*"
+                           requestClass:[GCDWebServerRequest class]
+                           processBlock:^GCDWebServerResponse * (GCDWebServerRequest *request) {
+
+        NSString *rel = [request.path stringByReplacingOccurrencesOfString:@"/hls/" withString:@""];
+        NSString *filePath = [baseDir stringByAppendingPathComponent:rel];
+
+        if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+            return [GCDWebServerResponse responseWithStatusCode:404];
+        }
+
+        GCDWebServerFileResponse *resp = [GCDWebServerFileResponse responseWithFile:filePath];
+
+        // no-cache (важно для live m3u8)
+        resp.cacheControlMaxAge = 0;
+        [resp setValue:@"no-cache, no-store, must-revalidate" forAdditionalHeader:@"Cache-Control"];
+        [resp setValue:@"no-cache" forAdditionalHeader:@"Pragma"];
+        [resp setValue:@"0" forAdditionalHeader:@"Expires"];
+
+        // правильные content-type (AVPlayer любит)
+        if ([rel hasSuffix:@".m3u8"]) {
+            resp.contentType = @"application/vnd.apple.mpegurl";
+        } else if ([rel hasSuffix:@".ts"]) {
+            resp.contentType = @"video/MP2T";
+        }
+
+        return resp;
+    }];
+
     NSError *error = nil;
     NSDictionary *options = @{
         GCDWebServerOption_Port: @(self.serverPort),
         GCDWebServerOption_BindToLocalhost: @YES,
         GCDWebServerOption_AutomaticallySuspendInBackground: @NO
     };
-    
+
     BOOL started = [self.webServer startWithOptions:options error:&error];
-    
-    if (started) {
-        self.hlsUrl = [NSString stringWithFormat:@"http://127.0.0.1:%lu/hls/stream.m3u8", 
-                       (unsigned long)self.serverPort];
-        NSLog(@"[HLS] Web server started: %@", self.hlsUrl);
-    } else {
+
+    if (!started) {
         NSLog(@"[HLS] Failed to start web server: %@", error);
-        
+
         self.serverPort = 8766;
         options = @{
             GCDWebServerOption_Port: @(self.serverPort),
-            GCDWebServerOption_BindToLocalhost: @YES
+            GCDWebServerOption_BindToLocalhost: @YES,
+            GCDWebServerOption_AutomaticallySuspendInBackground: @NO
         };
-        
-        if ([self.webServer startWithOptions:options error:&error]) {
-            self.hlsUrl = [NSString stringWithFormat:@"http://127.0.0.1:%lu/hls/stream.m3u8", 
-                           (unsigned long)self.serverPort];
-            NSLog(@"[HLS] Web server started on alt port: %@", self.hlsUrl);
-        } else {
-            if (self.errorCallback) {
-                self.errorCallback(@"Failed to start local HLS server");
-            }
-        }
+
+        started = [self.webServer startWithOptions:options error:&error];
+    }
+
+    if (started) {
+        self.hlsUrl = [NSString stringWithFormat:@"http://127.0.0.1:%lu/hls/stream.m3u8",
+                       (unsigned long)self.serverPort];
+        NSLog(@"[HLS] Web server started: %@", self.hlsUrl);
+    } else {
+        NSLog(@"[HLS] Failed to start local HLS server: %@", error);
+        if (self.errorCallback) self.errorCallback(@"Failed to start local HLS server");
     }
 #endif
 }
+
 
 - (void)stopWebServer {
 #if HAS_WEBSERVER
@@ -386,6 +425,63 @@
     }
     self.webServer = nil;
 #endif
+}
+
+#pragma mark - Error Handling
+
+- (NSString *)extractErrorMessage:(NSString *)ffmpegOutput {
+    if (!ffmpegOutput || ffmpegOutput.length == 0) {
+        return @"Connection error";
+    }
+    
+    // Split output into lines
+    NSArray *lines = [ffmpegOutput componentsSeparatedByString:@"\n"];
+    
+    // Look for ERROR: lines
+    for (NSString *line in lines) {
+        if ([line hasPrefix:@"ERROR:"]) {
+            // Extract just the error message, not the full line
+            NSString *errorMsg = [line substringFromIndex:6]; // Skip "ERROR:"
+            errorMsg = [errorMsg stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            
+            // Check for specific error types
+            if ([errorMsg containsString:@"No route to host"]) {
+                return @"Local Network permission required";
+            }
+            else if ([errorMsg containsString:@"Connection refused"]) {
+                return @"Camera not responding";
+            }
+            else if ([errorMsg containsString:@"timeout"] || [errorMsg containsString:@"timed out"]) {
+                return @"Connection timeout";
+            }
+            else if ([errorMsg containsString:@"Connection to"]) {
+                // "Connection to tcp://192.168.0.1:554 failed"
+                return @"Cannot connect to camera";
+            }
+            else if (errorMsg.length < 100) {
+                // If error is short, return it
+                return errorMsg;
+            }
+            else {
+                // Error too long, return generic message
+                return @"Stream connection error";
+            }
+        }
+    }
+    
+    // No ERROR: line found, check for common issues in full output
+    if ([ffmpegOutput containsString:@"No route to host"]) {
+        return @"Local Network permission required";
+    }
+    else if ([ffmpegOutput containsString:@"Connection refused"]) {
+        return @"Camera not responding";
+    }
+    else if ([ffmpegOutput containsString:@"timeout"]) {
+        return @"Connection timeout";
+    }
+    
+    // Generic error
+    return @"Stream connection error";
 }
 
 @end

@@ -32,6 +32,10 @@
 @property (nonatomic, assign) BOOL isPlaying;
 @property (nonatomic, strong) NSTimer *blinkTimer;
 
+// Orientation state
+@property (nonatomic, assign) BOOL isLandscape;
+@property (nonatomic, assign) UIInterfaceOrientation currentOrientation;
+
 @end
 
 @implementation HlsPlayerViewController
@@ -45,6 +49,9 @@
     
     if (!self.currentCamera) self.currentCamera = @"front";
     if (!self.apiBaseUrl) self.apiBaseUrl = @"http://192.168.0.1";
+    
+    self.isLandscape = NO;
+    self.currentOrientation = UIInterfaceOrientationPortrait;
     
     NSLog(@"[HLSPlayer] viewDidLoad - hlsUrl: %@", self.hlsUrl);
     
@@ -94,7 +101,19 @@
 }
 
 - (BOOL)prefersStatusBarHidden { return YES; }
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAllButUpsideDown; }
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { 
+    // Return current orientation mask based on state
+    if (self.isLandscape) {
+        return UIInterfaceOrientationMaskLandscape;
+    } else {
+        return UIInterfaceOrientationMaskPortrait;
+    }
+}
+
+- (BOOL)shouldAutorotate {
+    return YES; // Allow rotation when orientation mask changes
+}
 
 #pragma mark - Audio
 
@@ -160,11 +179,10 @@
     gradient.colors = @[(id)[UIColor colorWithWhite:0 alpha:0.8].CGColor, (id)[UIColor clearColor].CGColor];
     [self.topBar.layer insertSublayer:gradient atIndex:0];
     
+    // Close button with SVG icon
     self.backButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.backButton.frame = CGRectMake(16, 0, 44, 44);
-    [self.backButton setTitle:@"✕" forState:UIControlStateNormal];
-    self.backButton.titleLabel.font = [UIFont systemFontOfSize:24 weight:UIFontWeightBold];
-    self.backButton.tintColor = [UIColor whiteColor];
+    [self setCloseIconForButton:self.backButton];
     [self.backButton addTarget:self action:@selector(backTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.topBar addSubview:self.backButton];
     
@@ -193,14 +211,13 @@
     [self.recordingIndicator addSubview:recLabel];
     
     if (self.rearRtspUrl && self.rearRtspUrl.length > 0) {
-        self.cameraSwitchButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        self.cameraSwitchButton.frame = CGRectMake(self.view.bounds.size.width - 100, 50, 90, 36);
-        self.cameraSwitchButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
-        self.cameraSwitchButton.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
-        self.cameraSwitchButton.layer.cornerRadius = 18;
+        self.cameraSwitchButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        self.cameraSwitchButton.frame = CGRectMake(16, 50, 100, 36);
         [self.cameraSwitchButton setTitle:@"⟳ Front" forState:UIControlStateNormal];
-        [self.cameraSwitchButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        self.cameraSwitchButton.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        self.cameraSwitchButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+        self.cameraSwitchButton.tintColor = [UIColor whiteColor];
+        self.cameraSwitchButton.backgroundColor = [UIColor colorWithWhite:1 alpha:0.2];
+        self.cameraSwitchButton.layer.cornerRadius = 18;
         [self.cameraSwitchButton addTarget:self action:@selector(switchCamera) forControlEvents:UIControlEventTouchUpInside];
         [self.topBar addSubview:self.cameraSwitchButton];
     }
@@ -208,8 +225,8 @@
 
 - (void)setupBottomControls {
     self.bottomControls = [[UIView alloc] initWithFrame:CGRectMake(0, self.view.bounds.size.height - 160,
-                                                                   self.view.bounds.size.width, 160)];
-    self.bottomControls.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+                                                                    self.view.bounds.size.width, 160)];
+    self.bottomControls.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleWidth;
     [self.view addSubview:self.bottomControls];
     
     CAGradientLayer *gradient = [CAGradientLayer layer];
@@ -217,66 +234,265 @@
     gradient.colors = @[(id)[UIColor clearColor].CGColor, (id)[UIColor colorWithWhite:0 alpha:0.8].CGColor];
     [self.bottomControls.layer insertSublayer:gradient atIndex:0];
     
-    CGFloat centerY = 60, centerX = self.view.bounds.size.width / 2, spacing = 100;
+    CGFloat centerX = self.view.bounds.size.width / 2;
+    CGFloat buttonSize = 60;
+    CGFloat spacing = 90;
     
-    self.photoButton = [self createCircleButton:60];
-    self.photoButton.center = CGPointMake(centerX - spacing, centerY);
-    [self.photoButton setTitle:@"📷" forState:UIControlStateNormal];
+    // Photo button with SVG icon
+    self.photoButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.photoButton.frame = CGRectMake(centerX - spacing - buttonSize/2, 40, buttonSize, buttonSize);
+    self.photoButton.backgroundColor = [UIColor whiteColor];
+    self.photoButton.layer.cornerRadius = buttonSize / 2;
+    [self setPhotoIconForButton:self.photoButton];
     [self.photoButton addTarget:self action:@selector(takePhoto) forControlEvents:UIControlEventTouchUpInside];
     [self.bottomControls addSubview:self.photoButton];
     
-    self.recordButton = [self createCircleButton:72];
-    self.recordButton.center = CGPointMake(centerX, centerY);
-    [self.recordButton setTitle:@"⏺" forState:UIControlStateNormal];
+    // Record button with SVG icon
+    self.recordButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.recordButton.frame = CGRectMake(centerX - buttonSize/2, 40, buttonSize, buttonSize);
+    self.recordButton.backgroundColor = [UIColor whiteColor];
+    self.recordButton.layer.cornerRadius = buttonSize / 2;
+    [self setRecordIconForButton:self.recordButton];
     [self.recordButton addTarget:self action:@selector(toggleRecording) forControlEvents:UIControlEventTouchUpInside];
     [self.bottomControls addSubview:self.recordButton];
     
-    self.fullscreenButton = [self createCircleButton:60];
-    self.fullscreenButton.center = CGPointMake(centerX + spacing, centerY);
-    [self.fullscreenButton setTitle:@"⤢" forState:UIControlStateNormal];
-    [self.fullscreenButton addTarget:self action:@selector(toggleFullscreen) forControlEvents:UIControlEventTouchUpInside];
+    // Fullscreen/Rotation button with SVG icon
+    self.fullscreenButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.fullscreenButton.frame = CGRectMake(centerX + spacing - buttonSize/2, 40, buttonSize, buttonSize);
+    self.fullscreenButton.backgroundColor = [UIColor whiteColor];
+    self.fullscreenButton.layer.cornerRadius = buttonSize / 2;
+    [self setRotationIconForButton:self.fullscreenButton];
+    [self.fullscreenButton addTarget:self action:@selector(toggleOrientation) forControlEvents:UIControlEventTouchUpInside];
     [self.bottomControls addSubview:self.fullscreenButton];
 }
 
-- (UIButton *)createCircleButton:(CGFloat)size {
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    button.frame = CGRectMake(0, 0, size, size);
-    button.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.9];
-    button.layer.cornerRadius = size / 2;
-    button.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
-    button.titleLabel.font = [UIFont systemFontOfSize:size * 0.4];
-    [button setTitleColor:[UIColor darkGrayColor] forState:UIControlStateNormal];
-    return button;
+#pragma mark - SVG Icons
+
+- (void)setCloseIconForButton:(UIButton *)button {
+    // Close icon from ic_close.xml
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    [path moveToPoint:CGPointMake(34.9, 27)];
+    [path addLineToPoint:CGPointMake(52.4, 9.5)];
+    [path addCurveToPoint:CGPointMake(52.4, 1.7) controlPoint1:CGPointMake(54.6, 7.3) controlPoint2:CGPointMake(54.6, 3.9)];
+    [path addCurveToPoint:CGPointMake(44.6, 1.7) controlPoint1:CGPointMake(50.2, -0.5) controlPoint2:CGPointMake(46.8, -0.5)];
+    [path addLineToPoint:CGPointMake(27.1, 19.2)];
+    [path addLineToPoint:CGPointMake(9.4, 1.6)];
+    [path addCurveToPoint:CGPointMake(1.6, 1.6) controlPoint1:CGPointMake(7.2, -0.6) controlPoint2:CGPointMake(3.8, -0.6)];
+    [path addCurveToPoint:CGPointMake(1.6, 9.4) controlPoint1:CGPointMake(-0.6, 3.8) controlPoint2:CGPointMake(-0.5, 7.1)];
+    [path addLineToPoint:CGPointMake(19.3, 27)];
+    [path addLineToPoint:CGPointMake(1.8, 44.5)];
+    [path addCurveToPoint:CGPointMake(1.8, 52.3) controlPoint1:CGPointMake(-0.4, 46.7) controlPoint2:CGPointMake(-0.4, 50.1)];
+    [path addCurveToPoint:CGPointMake(5.7, 54) controlPoint1:CGPointMake(2.8, 53.5) controlPoint2:CGPointMake(4.3, 54)];
+    [path addCurveToPoint:CGPointMake(9.6, 52.4) controlPoint1:CGPointMake(7.1, 54) controlPoint2:CGPointMake(8.5, 53.5)];
+    [path addLineToPoint:CGPointMake(27.1, 34.9)];
+    [path addLineToPoint:CGPointMake(44.6, 52.4)];
+    [path addCurveToPoint:CGPointMake(48.5, 54) controlPoint1:CGPointMake(45.7, 53.5) controlPoint2:CGPointMake(47, 54)];
+    [path addCurveToPoint:CGPointMake(52.4, 52.4) controlPoint1:CGPointMake(49.9, 54) controlPoint2:CGPointMake(51.3, 53.5)];
+    [path addCurveToPoint:CGPointMake(52.4, 44.6) controlPoint1:CGPointMake(54.6, 50.2) controlPoint2:CGPointMake(54.6, 46.8)];
+    [path addLineToPoint:CGPointMake(34.9, 27)];
+    [path closePath];
+    
+    CAShapeLayer *shapeLayer = [CAShapeLayer layer];
+    shapeLayer.path = path.CGPath;
+    shapeLayer.fillColor = [UIColor whiteColor].CGColor;
+    
+    CGFloat scale = 24.0 / 64.0;
+    CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
+    shapeLayer.path = CGPathCreateCopyByTransformingPath(path.CGPath, &transform);
+    shapeLayer.frame = CGRectMake(10, 10, 24, 24);
+    
+    [button.layer addSublayer:shapeLayer];
 }
 
-#pragma mark - AVPlayer
+- (void)setPhotoIconForButton:(UIButton *)button {
+    // Photo icon from ic_photo.xml
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    
+    // Main camera body
+    [path moveToPoint:CGPointMake(26.9, 48.6)];
+    [path addLineToPoint:CGPointMake(5.5, 48.6)];
+    [path addCurveToPoint:CGPointMake(0.7, 45.9) controlPoint1:CGPointMake(3.4, 48.6) controlPoint2:CGPointMake(1.6, 47.7)];
+    [path addCurveToPoint:CGPointMake(0, 43.2) controlPoint1:CGPointMake(0.3, 45.1) controlPoint2:CGPointMake(0, 44.2)];
+    [path addCurveToPoint:CGPointMake(0, 18.9) controlPoint1:CGPointMake(0, 35.1) controlPoint2:CGPointMake(0, 27)];
+    [path addCurveToPoint:CGPointMake(5.3, 13.5) controlPoint1:CGPointMake(0, 15.8) controlPoint2:CGPointMake(2.2, 13.5)];
+    [path addLineToPoint:CGPointMake(10.9, 13.5)];
+    [path addCurveToPoint:CGPointMake(14.2, 11.1) controlPoint1:CGPointMake(12.8, 13.5) controlPoint2:CGPointMake(13.4, 13.1)];
+    [path addLineToPoint:CGPointMake(15.5, 7.1)];
+    [path addCurveToPoint:CGPointMake(18, 5.4) controlPoint1:CGPointMake(16, 5.9) controlPoint2:CGPointMake(16.8, 5.4)];
+    [path addLineToPoint:CGPointMake(35.9, 5.4)];
+    [path addCurveToPoint:CGPointMake(38.4, 7.2) controlPoint1:CGPointMake(37.2, 5.4) controlPoint2:CGPointMake(38, 6)];
+    [path addLineToPoint:CGPointMake(39.8, 11.5)];
+    [path addCurveToPoint:CGPointMake(42.6, 13.5) controlPoint1:CGPointMake(40.3, 13) controlPoint2:CGPointMake(41.4, 13.5)];
+    [path addLineToPoint:CGPointMake(48.2, 13.5)];
+    [path addCurveToPoint:CGPointMake(54, 19.2) controlPoint1:CGPointMake(51.6, 13.4) controlPoint2:CGPointMake(53.8, 16.5)];
+    [path addCurveToPoint:CGPointMake(54, 43.2) controlPoint1:CGPointMake(53.9, 27.2) controlPoint2:CGPointMake(53.9, 35.2)];
+    [path addCurveToPoint:CGPointMake(48.5, 48.7) controlPoint1:CGPointMake(54, 45.9) controlPoint2:CGPointMake(51.2, 48.7)];
+    [path addLineToPoint:CGPointMake(26.9, 48.6)];
+    [path closePath];
+    
+    // Lens circle
+    [path moveToPoint:CGPointMake(27, 16.2)];
+    [path addCurveToPoint:CGPointMake(13.4, 29.7) controlPoint1:CGPointMake(19.5, 16.2) controlPoint2:CGPointMake(13.4, 22.2)];
+    [path addCurveToPoint:CGPointMake(26.9, 43.3) controlPoint1:CGPointMake(13.4, 37.2) controlPoint2:CGPointMake(19.4, 43.3)];
+    [path addCurveToPoint:CGPointMake(40.5, 29.8) controlPoint1:CGPointMake(34.4, 43.3) controlPoint2:CGPointMake(40.5, 37.3)];
+    [path addCurveToPoint:CGPointMake(27, 16.2) controlPoint1:CGPointMake(40.5, 22.3) controlPoint2:CGPointMake(34.5, 16.2)];
+    [path closePath];
+    
+    // Inner lens
+    [path moveToPoint:CGPointMake(27, 37.8)];
+    [path addCurveToPoint:CGPointMake(18.9, 29.7) controlPoint1:CGPointMake(22.5, 37.8) controlPoint2:CGPointMake(18.9, 34.2)];
+    [path addCurveToPoint:CGPointMake(27, 21.6) controlPoint1:CGPointMake(18.9, 25.2) controlPoint2:CGPointMake(22.5, 21.6)];
+    [path addCurveToPoint:CGPointMake(35.1, 29.7) controlPoint1:CGPointMake(31.5, 21.6) controlPoint2:CGPointMake(35.1, 25.2)];
+    [path addCurveToPoint:CGPointMake(27, 37.8) controlPoint1:CGPointMake(35.1, 34.2) controlPoint2:CGPointMake(31.5, 37.8)];
+    [path closePath];
+    
+    CAShapeLayer *shapeLayer = [CAShapeLayer layer];
+    shapeLayer.path = path.CGPath;
+    shapeLayer.fillColor = [UIColor blackColor].CGColor;
+    
+    CGFloat scale = 30.0 / 54.0;
+    CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
+    shapeLayer.path = CGPathCreateCopyByTransformingPath(path.CGPath, &transform);
+    shapeLayer.frame = CGRectMake(15, 15, 30, 30);
+    
+    [button.layer addSublayer:shapeLayer];
+}
+
+- (void)setRecordIconForButton:(UIButton *)button {
+    // Record icon from ic_record.xml
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    
+    // Video camera body
+    [path moveToPoint:CGPointMake(42.7, 31.2)];
+    [path addCurveToPoint:CGPointMake(49.5, 25.3) controlPoint1:CGPointMake(45.3, 28.8) controlPoint2:CGPointMake(47.2, 26.9)];
+    [path addCurveToPoint:CGPointMake(52.9, 24.5) controlPoint1:CGPointMake(50.4, 24.7) controlPoint2:CGPointMake(51.9, 24.4)];
+    [path addCurveToPoint:CGPointMake(53.9, 27.2) controlPoint1:CGPointMake(53.4, 24.6) controlPoint2:CGPointMake(53.9, 25.9)];
+    [path addCurveToPoint:CGPointMake(53.9, 46.5) controlPoint1:CGPointMake(54, 33.6) controlPoint2:CGPointMake(54, 40.1)];
+    [path addCurveToPoint:CGPointMake(52.4, 49.6) controlPoint1:CGPointMake(53.9, 47.6) controlPoint2:CGPointMake(53.1, 49.4)];
+    [path addCurveToPoint:CGPointMake(48.8, 48.7) controlPoint1:CGPointMake(51.4, 49.9) controlPoint2:CGPointMake(50.4, 49.5)];
+    [path addLineToPoint:CGPointMake(42.7, 42.6)];
+    [path addLineToPoint:CGPointMake(42.7, 46.6)];
+    [path addCurveToPoint:CGPointMake(37.3, 52) controlPoint1:CGPointMake(42.6, 50.6) controlPoint2:CGPointMake(40.0, 52)];
+    [path addLineToPoint:CGPointMake(10.6, 52)];
+    [path addLineToPoint:CGPointMake(4.7, 52)];
+    [path addCurveToPoint:CGPointMake(0.1, 47.2) controlPoint1:CGPointMake(1.4, 51.9) controlPoint2:CGPointMake(0.0, 50.3)];
+    [path addCurveToPoint:CGPointMake(0.1, 27) controlPoint1:CGPointMake(0, 40.4) controlPoint2:CGPointMake(0.1, 33.8)];
+    [path addCurveToPoint:CGPointMake(4.4, 22.1) controlPoint1:CGPointMake(0.1, 23.9) controlPoint2:CGPointMake(1.3, 22.1)];
+    [path addLineToPoint:CGPointMake(38.6, 22.1)];
+    [path addCurveToPoint:CGPointMake(42.8, 26.5) controlPoint1:CGPointMake(41.3, 22.1) controlPoint2:CGPointMake(42.7, 23.8)];
+    [path addLineToPoint:CGPointMake(42.7, 31.2)];
+    [path closePath];
+    
+    // Top left circle
+    [path moveToPoint:CGPointMake(9.7, 20.1)];
+    [path addCurveToPoint:CGPointMake(0, 11.1) controlPoint1:CGPointMake(4.3, 20.1) controlPoint2:CGPointMake(0, 16.3)];
+    [path addCurveToPoint:CGPointMake(9.9, 2) controlPoint1:CGPointMake(0, 5.9) controlPoint2:CGPointMake(4.7, 1.9)];
+    [path addCurveToPoint:CGPointMake(19.4, 11) controlPoint1:CGPointMake(15.1, 2.1) controlPoint2:CGPointMake(19.4, 6.2)];
+    [path addCurveToPoint:CGPointMake(9.7, 20.1) controlPoint1:CGPointMake(19.5, 16.1) controlPoint2:CGPointMake(15.1, 20.2)];
+    [path closePath];
+    
+    // Top right circle
+    [path moveToPoint:CGPointMake(40.4, 11.2)];
+    [path addCurveToPoint:CGPointMake(30.7, 20.2) controlPoint1:CGPointMake(40.4, 16.2) controlPoint2:CGPointMake(36.0, 20.2)];
+    [path addCurveToPoint:CGPointMake(20.9, 11.2) controlPoint1:CGPointMake(25.4, 20.2) controlPoint2:CGPointMake(20.9, 16.2)];
+    [path addCurveToPoint:CGPointMake(30.6, 2.1) controlPoint1:CGPointMake(20.9, 6.3) controlPoint2:CGPointMake(25.3, 2.1)];
+    [path addCurveToPoint:CGPointMake(40.4, 11.2) controlPoint1:CGPointMake(36.0, 2.1) controlPoint2:CGPointMake(40.4, 6.2)];
+    [path closePath];
+    
+    CAShapeLayer *shapeLayer = [CAShapeLayer layer];
+    shapeLayer.path = path.CGPath;
+    shapeLayer.fillColor = [UIColor blackColor].CGColor;
+    
+    CGFloat scale = 30.0 / 54.0;
+    CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
+    shapeLayer.path = CGPathCreateCopyByTransformingPath(path.CGPath, &transform);
+    shapeLayer.frame = CGRectMake(15, 15, 30, 30);
+    
+    [button.layer addSublayer:shapeLayer];
+}
+
+- (void)setRotationIconForButton:(UIButton *)button {
+    // Rotation/Fullscreen icon - simplified version
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    
+    [path moveToPoint:CGPointMake(46.4, 5.5)];
+    [path addLineToPoint:CGPointMake(7.6, 5.5)];
+    [path addCurveToPoint:CGPointMake(0, 13.2) controlPoint1:CGPointMake(3.4, 5.5) controlPoint2:CGPointMake(0, 9)];
+    [path addLineToPoint:CGPointMake(0, 40.9)];
+    [path addCurveToPoint:CGPointMake(7.6, 48.5) controlPoint1:CGPointMake(0, 45.1) controlPoint2:CGPointMake(3.4, 48.5)];
+    [path addLineToPoint:CGPointMake(46.4, 48.5)];
+    [path addCurveToPoint:CGPointMake(54, 40.9) controlPoint1:CGPointMake(50.6, 48.5) controlPoint2:CGPointMake(54, 45.1)];
+    [path addLineToPoint:CGPointMake(54, 13.2)];
+    [path addCurveToPoint:CGPointMake(46.4, 5.5) controlPoint1:CGPointMake(54, 9) controlPoint2:CGPointMake(50.6, 5.5)];
+    [path closePath];
+    
+    // Bottom left corner
+    [path moveToPoint:CGPointMake(18.7, 40.2)];
+    [path addLineToPoint:CGPointMake(13.2, 40.2)];
+    [path addCurveToPoint:CGPointMake(8.4, 35.4) controlPoint1:CGPointMake(10.5, 40.2) controlPoint2:CGPointMake(8.4, 38.1)];
+    [path addLineToPoint:CGPointMake(8.4, 29.9)];
+    [path addCurveToPoint:CGPointMake(10.5, 27.8) controlPoint1:CGPointMake(8.4, 28.8) controlPoint2:CGPointMake(9.4, 27.8)];
+    [path addCurveToPoint:CGPointMake(12.6, 29.9) controlPoint1:CGPointMake(11.6, 27.8) controlPoint2:CGPointMake(12.6, 28.8)];
+    [path addLineToPoint:CGPointMake(12.6, 35.4)];
+    [path addCurveToPoint:CGPointMake(13.3, 36.1) controlPoint1:CGPointMake(12.6, 35.8) controlPoint2:CGPointMake(12.9, 36.1)];
+    [path addLineToPoint:CGPointMake(18.7, 36.1)];
+    [path addCurveToPoint:CGPointMake(20.8, 38.1) controlPoint1:CGPointMake(19.8, 36.1) controlPoint2:CGPointMake(20.8, 37.0)];
+    [path addCurveToPoint:CGPointMake(18.7, 40.2) controlPoint1:CGPointMake(20.8, 39.2) controlPoint2:CGPointMake(19.8, 40.2)];
+    [path closePath];
+    
+    // Top right corner
+    [path moveToPoint:CGPointMake(45.7, 24.2)];
+    [path addCurveToPoint:CGPointMake(43.6, 26.3) controlPoint1:CGPointMake(45.7, 25.3) controlPoint2:CGPointMake(44.7, 26.3)];
+    [path addCurveToPoint:CGPointMake(41.5, 24.2) controlPoint1:CGPointMake(42.5, 26.3) controlPoint2:CGPointMake(41.5, 25.3)];
+    [path addLineToPoint:CGPointMake(41.5, 18.7)];
+    [path addCurveToPoint:CGPointMake(40.8, 18) controlPoint1:CGPointMake(41.5, 18.3) controlPoint2:CGPointMake(41.2, 18)];
+    [path addLineToPoint:CGPointMake(35.3, 18)];
+    [path addCurveToPoint:CGPointMake(33.2, 15.9) controlPoint1:CGPointMake(34.2, 18) controlPoint2:CGPointMake(33.2, 17.0)];
+    [path addCurveToPoint:CGPointMake(35.3, 13.8) controlPoint1:CGPointMake(33.2, 14.8) controlPoint2:CGPointMake(34.2, 13.8)];
+    [path addLineToPoint:CGPointMake(40.8, 13.8)];
+    [path addCurveToPoint:CGPointMake(45.6, 18.6) controlPoint1:CGPointMake(43.5, 13.8) controlPoint2:CGPointMake(45.6, 15.9)];
+    [path addLineToPoint:CGPointMake(45.7, 24.2)];
+    [path closePath];
+    
+    CAShapeLayer *shapeLayer = [CAShapeLayer layer];
+    shapeLayer.path = path.CGPath;
+    shapeLayer.fillColor = [UIColor blackColor].CGColor;
+    
+    CGFloat scale = 30.0 / 54.0;
+    CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
+    shapeLayer.path = CGPathCreateCopyByTransformingPath(path.CGPath, &transform);
+    shapeLayer.frame = CGRectMake(15, 15, 30, 30);
+    
+    [button.layer addSublayer:shapeLayer];
+}
+
+#pragma mark - Playback
 
 - (void)startPlayback {
     if (!self.hlsUrl || self.hlsUrl.length == 0) {
-        [self showError:@"No HLS URL provided"];
+        [self showError:@"No stream URL provided"];
         return;
     }
     
-    NSLog(@"[HLSPlayer] Starting: %@", self.hlsUrl);
-    
     NSURL *url = [NSURL URLWithString:self.hlsUrl];
-    AVPlayerItem *playerItem = [AVPlayerItem playerItemWithURL:url];
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
     
-    self.player = [AVPlayer playerWithPlayerItem:playerItem];
+    [item addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
+    [item addObserver:self forKeyPath:@"playbackBufferEmpty" options:NSKeyValueObservingOptionNew context:nil];
+    [item addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:NSKeyValueObservingOptionNew context:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(playerItemDidReachEnd:) 
+                                                 name:AVPlayerItemDidPlayToEndTimeNotification 
+                                               object:item];
+    
+    self.player = [AVPlayer playerWithPlayerItem:item];
+    self.player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
     
     self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
     self.playerLayer.frame = self.videoContainer.bounds;
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspect;
     [self.videoContainer.layer addSublayer:self.playerLayer];
-    
-    [playerItem addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
-    [playerItem addObserver:self forKeyPath:@"playbackBufferEmpty" options:NSKeyValueObservingOptionNew context:nil];
-    [playerItem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:NSKeyValueObservingOptionNew context:nil];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(playerItemDidReachEnd:)
-                                                 name:AVPlayerItemDidPlayToEndTimeNotification
-                                               object:playerItem];
     
     [self.player play];
 }
@@ -393,12 +609,63 @@
     }];
 }
 
-- (void)toggleFullscreen {
-    if ([self.playerLayer.videoGravity isEqualToString:AVLayerVideoGravityResizeAspect]) {
-        self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+- (void)toggleOrientation {
+    self.isLandscape = !self.isLandscape;
+    
+    NSLog(@"[HLSPlayer] Toggling orientation to: %@", self.isLandscape ? @"Landscape" : @"Portrait");
+    
+    // First, update the supported orientations
+    [self setNeedsUpdateOfSupportedInterfaceOrientations];
+    
+    if (@available(iOS 16.0, *)) {
+        // iOS 16+ - use new geometry preferences API
+        NSArray *scenes = [UIApplication sharedApplication].connectedScenes.allObjects;
+        for (UIScene *scene in scenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                UIWindowSceneGeometryPreferencesIOS *preferences = 
+                    [[UIWindowSceneGeometryPreferencesIOS alloc] init];
+                
+                // Set the interface orientations that are now "supported"
+                if (self.isLandscape) {
+                    preferences.interfaceOrientations = UIInterfaceOrientationMaskLandscape;
+                } else {
+                    preferences.interfaceOrientations = UIInterfaceOrientationMaskPortrait;
+                }
+                
+                [windowScene requestGeometryUpdateWithPreferences:preferences 
+                                                      errorHandler:^(NSError *error) {
+                    if (error) {
+                        NSLog(@"[HLSPlayer] Orientation change error: %@", error);
+                    }
+                }];
+            }
+        }
+        
+        // Force the view controller to re-evaluate its orientation support
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [UIViewController attemptRotationToDeviceOrientation];
+        });
+        
     } else {
-        self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspect;
+        // iOS 15 and below - use setValue trick
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        
+        UIInterfaceOrientation targetOrientation = self.isLandscape ? 
+            UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
+        
+        [[UIDevice currentDevice] setValue:@(targetOrientation) forKey:@"orientation"];
+        [UIViewController attemptRotationToDeviceOrientation];
+        
+        #pragma clang diagnostic pop
     }
+    
+    [self showToast:self.isLandscape ? @"Landscape" : @"Portrait"];
+    
+    [self.delegate hlsPlayerDidTriggerAction:@"ORIENTATION_CHANGED" 
+                                      camera:self.currentCamera 
+                                        data:@{@"isLandscape": @(self.isLandscape)}];
 }
 
 - (void)updateRecordingUI {
