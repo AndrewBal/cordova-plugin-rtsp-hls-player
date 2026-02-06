@@ -36,7 +36,7 @@ cordova-plugin-rtsp-hls-player/
 ### 1. Add the plugin
 
 ```bash
-cordova plugin add /path/to/cordova-plugin-rtsp-hls-player
+cordova plugin add https://github.com/AndrewBal/cordova-plugin-rtsp-hls-player.git
 ```
 
 ### 2. Update the Podfile
