@@ -69,7 +69,7 @@ end
 
 ```bash
 cd platforms/ios
-pod install
+pod update
 ```
 
 ### 4. Open the workspace
